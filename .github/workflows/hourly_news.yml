@@ -1,0 +1,38 @@
+name: Hourly Top 5 News Bot
+
+on:
+  schedule:
+    - cron: '0 * * * *' # ھەر 1 سائەتتە بىر قېتىم ئاپتوماتىك قوزغىلىدۇ
+  workflow_dispatch: # قول بىلەن بىر كۇنۇپكا بىلەن قوزغىتىش
+
+permissions:
+  contents: write
+
+jobs:
+  send-news:
+    runs-on: ubuntu-latest
+    steps:
+      - name: كودنى چۈشۈرۈش
+        uses: actions/checkout@v4
+
+      - name: Python قاچىلاش
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: كۇتۇپخانىلارنى قاچىلاش
+        run: pip install feedparser requests
+
+      - name: 5 نادىر خەۋەرنى تاللاپ يوللاش
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: "@uy1933news"
+        run: python news_bot.py --once
+
+      - name: ئەۋەتىلگەن خەۋەرلەر خاتىرىسىنى ساقلاش
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add sent_history.json || true
+          git diff --staged --quiet || git commit -m "Update sent news history"
+          git push || true
