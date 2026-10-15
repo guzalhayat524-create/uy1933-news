@@ -9,6 +9,10 @@ import difflib
 import warnings
 import requests
 import feedparser
+from dotenv import load_dotenv
+
+# ==================== 0. .env تەڭشىكىنى يۈكلەش ====================
+load_dotenv()  # .env ھۆججىتىدىن تەڭشەكلەرنى ئوقۇيدۇ
 
 # ==================== 1. Encoding تەڭشىكى ====================
 os.environ["PYTHONIOENCODING"] = "utf-8"
@@ -24,7 +28,7 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "@uy1933news").strip()
 
 HISTORY_FILE = "sent_history.json"
-MAX_NEWS_PER_ROUND = 5       # ھەر قېتىمدا دەل 5 تال نادىر خەۋەر
+MAX_NEWS_PER_ROUND = 5        # ھەر قېتىمدا دەل 5 تال نادىر خەۋەر
 CHECK_INTERVAL_SECONDS = 3600 # 1 سائەت (3600 سېكۇنت)
 
 USE_TELEGRAM_PROXY = False
@@ -101,7 +105,10 @@ def clean_html(raw_text):
 def escape_markdown(text):
     if not text:
         return ""
-    return text.replace("*", "").replace("_", "").replace("`", "").replace("[", "(").replace("]", ")")
+    # تېلېگرامما بەلگە خاتالىقى چىقماسلىقى ئۈچۈن مەسىلە كۆرۈلىدىغان بەلگىلەر تازىلىنىدۇ
+    for char in ['*', '_', '`', '[', ']', '(', ')', '~', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']:
+        text = text.replace(char, '')
+    return text
 
 
 def is_duplicate_news(title, sent_titles):
@@ -222,8 +229,8 @@ def smart_translate_and_summarize_free(title, summary):
     translated_summary = translate_to_uyghur(clean_sum)
 
     return (
-        f"📌 *ماۋزۇ:* {escape_markdown(translated_title)}\n\n"
-        f"📝 *خۇلاسە:* {escape_markdown(translated_summary)}"
+        f"📌 ماۋزۇ: {escape_markdown(translated_title)}\n\n"
+        f"📝 خۇلاسە: {escape_markdown(translated_summary)}"
     )
 
 
@@ -236,13 +243,13 @@ def send_telegram_news(message, image_url=None):
     if USE_TELEGRAM_PROXY:
         kwargs['proxies'] = TELEGRAM_PROXIES
 
+    # parse_mode ئېلىۋېتىلدى، شۇ ئارقىلىق بەلگە خاتالىقى مەڭگۈ چىقمايدۇ
     if image_url:
         photo_api = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
         payload = {
             "chat_id": TELEGRAM_CHAT_ID,
             "photo": image_url,
-            "caption": message[:1024],
-            "parse_mode": "Markdown"
+            "caption": message[:1024]
         }
         try:
             res = requests.post(photo_api, json=payload, **kwargs)
@@ -255,7 +262,6 @@ def send_telegram_news(message, image_url=None):
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
         "text": message,
-        "parse_mode": "Markdown",
         "disable_web_page_preview": False
     }
 
@@ -281,84 +287,65 @@ def check_and_process_news():
     candidates = []
 
     for source in RSS_SOURCES:
-        print(f"🔍 [تەكشۈرۈلۈۋاتىدۇ]: {source['name']}...", flush=True)
         feed = fetch_rss_force(source["url"])
+        if not feed or not hasattr(feed, 'entries'):
+            continue
 
-        if feed and feed.entries:
-            for entry in feed.entries[:5]:
-                link = getattr(entry, 'link', '').strip()
-                if not link or link in sent_links:
-                    continue
+        for entry in feed.entries:
+            link = getattr(entry, 'link', '')
+            title = getattr(entry, 'title', '')
+            summary = getattr(entry, 'summary', getattr(entry, 'description', ''))
 
-                title = getattr(entry, 'title', '')
-                summary = getattr(entry, 'summary', getattr(entry, 'description', ''))
-                source_name = source["name"]
+            if not link or not title:
+                continue
 
-                if is_duplicate_news(title, sent_titles):
-                    sent_links.add(link)
-                    continue
+            if link in sent_links:
+                continue
 
-                score = calculate_news_score(title, summary, source_name)
-                if score > 0:
-                    candidates.append({
-                        "score": score,
-                        "title": title,
-                        "summary": summary,
-                        "link": link,
-                        "source_name": source_name,
-                        "entry": entry
-                    })
+            if is_duplicate_news(title, sent_titles):
+                continue
 
+            score = calculate_news_score(title, summary, source["name"])
+            candidates.append({
+                "score": score,
+                "title": title,
+                "summary": summary,
+                "link": link,
+                "source": source["name"],
+                "entry": entry
+            })
+
+    # نومۇرى يۇقىرى بولغانلارنى ئالدىغا چىقىرىش
     candidates.sort(key=lambda x: x["score"], reverse=True)
-    top_news = candidates[:MAX_NEWS_PER_ROUND]
+    selected_news = candidates[:MAX_NEWS_PER_ROUND]
 
-    print(f"\n🏆 جەمئىي {len(candidates)} خەۋەر ئىچىدىن ئەڭ نادىر {len(top_news)} خەۋەر تاللاندى!", flush=True)
+    if not selected_news:
+        print("📭 بۇ سائەتتە يېڭى نادىر خەۋەر تېپىلمىدى.", flush=True)
+        return
 
-    sent_count = 0
-    for item in top_news:
-        title = item["title"]
-        summary = item["summary"]
-        link = item["link"]
-        source_name = item["source_name"]
-        entry = item["entry"]
+    print(f"🔥 جەمئىي {len(selected_news)} تال نادىر خەۋەر تاللاپ تەرجىمە قىلىنىدۇ...", flush=True)
 
-        print(f"\n🌟 [نادىر خەۋەر - نومۇرى {item['score']}]: {title[:45]}...", flush=True)
+    success_count = 0
+    for idx, item in enumerate(selected_news, 1):
+        print(f"⚙️ [{idx}/{len(selected_news)}] تەرجىمە قىلىنىۋاتىدۇ: {item['title'][:50]}...", flush=True)
+        
+        formatted_msg = smart_translate_and_summarize_free(item['title'], item['summary'])
+        final_message = f"{formatted_msg}\n\n🔗 تەپسىلاتى: {item['link']}\n🌐 مەنبە: {item['source']}"
 
-        image_url = extract_image_url(entry, link)
-        translated_result = smart_translate_and_summarize_free(title, summary)
+        image_url = extract_image_url(item['entry'], item['link'])
 
-        if translated_result:
-            safe_hashtag = re.sub(r'[^a-zA-Z0-9\u0600-\u06FF]', '', source_name)
-            message = (
-                f"🌐 *سائەتلىك نادىر خەۋەر* ({escape_markdown(source_name)})\n\n"
-                f"{translated_result}\n\n"
-                f"🔗 [ئەسلى خەۋەرنى ئوقۇش]({link})\n\n"
-                f"#نادىر_خەۋەر #دۇنيا #{safe_hashtag}"
-            )
-
-            if send_telegram_news(message, image_url):
-                sent_count += 1
-                print(f"🎉 ✅ [{sent_count}/{MAX_NEWS_PER_ROUND}] نادىر خەۋەر قانالغا ئەۋەتىلدى!", flush=True)
-                sent_links.add(link)
-                sent_titles.append(title)
-                save_history(sent_links, sent_titles)
-            else:
-                print("❌ ئەۋەتىش مەغلۇپ بولدى.", flush=True)
-
-        time.sleep(3)
+        if send_telegram_news(final_message, image_url):
+            print(f"✅ [نۆۋىتى {idx}] نادىر خەۋەر ئەۋەتىلدى!", flush=True)
+            sent_links.add(item['link'])
+            sent_titles.append(item['title'])
+            success_count += 1
+            time.sleep(3)
+        else:
+            print(f"❌ [نۆۋىتى {idx}] ئەۋەتىش مەغلۇپ بولды", flush=True)
 
     save_history(sent_links, sent_titles)
-    print(f"\n📊 بۇ سائەتتە جەمئىي {sent_count} دانە نادىر خەۋەر ئەۋەتىلدى.", flush=True)
+    print(f"🏁 بۇ سائەتلىك جەريان تاماملاندى. ئەۋەتىلگىنى: {success_count} دانە.", flush=True)
 
 
 if __name__ == "__main__":
-    if "--once" in sys.argv or os.getenv("GITHUB_ACTIONS") == "true":
-        check_and_process_news()
-    else:
-        while True:
-            try:
-                check_and_process_news()
-            except Exception as main_e:
-                print(f"⚠️ خاتالىق: {main_e}", flush=True)
-            print("\n😴 كېيىنكى سائەتلىك تەكشۈرۈشكىچە 60 مىنۇت كۈتۈۋاتىدۇ...", flush=True)
-            time.sleep(CHECK_INTERVAL_SECONDS)
+    check_and_process_news()
