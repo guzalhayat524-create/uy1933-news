@@ -9,10 +9,6 @@ import difflib
 import warnings
 import requests
 import feedparser
-from dotenv import load_dotenv
-
-# ==================== 0. .env تەڭشىكىنى يۈكلەش ====================
-load_dotenv()
 
 # ==================== 1. Encoding تەڭشىكى ====================
 os.environ["PYTHONIOENCODING"] = "utf-8"
