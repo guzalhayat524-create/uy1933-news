@@ -12,7 +12,7 @@ import feedparser
 from dotenv import load_dotenv
 
 # ==================== 0. .env تەڭشىكىنى يۈكلەش ====================
-load_dotenv()  # .env ھۆججىتىدىن تەڭشەكلەرنى ئوقۇيدۇ
+load_dotenv()
 
 # ==================== 1. Encoding تەڭشىكى ====================
 os.environ["PYTHONIOENCODING"] = "utf-8"
@@ -28,8 +28,8 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "@uy1933news").strip()
 
 HISTORY_FILE = "sent_history.json"
-MAX_NEWS_PER_ROUND = 5        # ھەر قېتىمدا دەل 5 تال نادىر خەۋەر
-CHECK_INTERVAL_SECONDS = 3600 # 1 سائەت (3600 سېكۇنت)
+MAX_NEWS_PER_ROUND = 5
+CHECK_INTERVAL_SECONDS = 3600
 
 USE_TELEGRAM_PROXY = False
 TELEGRAM_PROXIES = {
@@ -100,15 +100,6 @@ def clean_html(raw_text):
     text = re.sub(r'<[^>]+>', ' ', raw_text)
     text = html.unescape(text)
     return re.sub(r'\s+', ' ', text).strip()
-
-
-def escape_markdown(text):
-    if not text:
-        return ""
-    # تېلېگرامما بەلگە خاتالىقى چىقماسلىقى ئۈچۈن مەسىلە كۆرۈلىدىغان بەلگىلەر تازىلىنىدۇ
-    for char in ['*', '_', '`', '[', ']', '(', ')', '~', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']:
-        text = text.replace(char, '')
-    return text
 
 
 def is_duplicate_news(title, sent_titles):
@@ -229,8 +220,8 @@ def smart_translate_and_summarize_free(title, summary):
     translated_summary = translate_to_uyghur(clean_sum)
 
     return (
-        f"📌 ماۋزۇ: {escape_markdown(translated_title)}\n\n"
-        f"📝 خۇلاسە: {escape_markdown(translated_summary)}"
+        f"📌 ماۋزۇ: {translated_title}\n\n"
+        f"📝 خۇلاسە: {translated_summary}"
     )
 
 
@@ -243,7 +234,6 @@ def send_telegram_news(message, image_url=None):
     if USE_TELEGRAM_PROXY:
         kwargs['proxies'] = TELEGRAM_PROXIES
 
-    # parse_mode ئېلىۋېتىلدى، شۇ ئارقىلىق بەلگە خاتالىقى مەڭگۈ چىقمايدۇ
     if image_url:
         photo_api = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
         payload = {
@@ -315,7 +305,6 @@ def check_and_process_news():
                 "entry": entry
             })
 
-    # نومۇرى يۇقىرى بولغانلارنى ئالدىغا چىقىرىش
     candidates.sort(key=lambda x: x["score"], reverse=True)
     selected_news = candidates[:MAX_NEWS_PER_ROUND]
 
